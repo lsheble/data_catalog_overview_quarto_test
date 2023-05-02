@@ -1,0 +1,701 @@
+---
+title: "AGO Data Catalog Overview"
+format: 
+  html:
+    code-fold: true
+jupyter: python3
+---
+
+
+```{python}
+import requests
+
+url = 'https://data.detroitmi.gov/api/feed/dcat-us/1.1'
+r = requests.get(url)
+```
+
+
+### How many datasets in the catalog?
+
+```{python}
+d = r.json()
+len(d['dataset'])
+```
+
+### View metadata for a single dataset 
+
+```{python}
+d['dataset'][0]
+```
+
+### Where is data hosted?
+```{python}
+
+data_source = []
+for data in d['dataset']:
+    source = 'Other'
+    try:
+        for data_format in data['distribution']:
+            try:
+                if data_format['title']=='ArcGIS Hub Dataset':
+                    source='ArcGIS'
+                    break
+            except KeyError:
+                pass
+    except:
+        pass
+    data_source.append(source)
+
+```
+
+
+Data set distributions hosted
+```{python}
+import pandas as pd
+sources = pd.Series(data_source).value_counts()
+sources
+```
+```{python}
+import matplotlib.pyplot as plt 
+import seaborn as sns
+
+#set preferences
+sns.set(color_codes=True)
+```
+
+
+### Most frequently used keywords
+
+```{python}
+keywords = []
+for data in d['dataset']:
+    try:
+        keywords = keywords + data['keyword']
+    except:
+        pass
+```
+
+
+```{python}
+count =  pd.Series(keywords).value_counts()
+
+```
+
+
+```{python}
+counts = count[:40]
+counts.sort_values(ascending=False, inplace=True)
+```
+
+
+```{python}
+#Generates bar graph
+ax = counts.sort_values(ascending=True).plot(kind='barh', figsize=(10, 10), fontsize=12)
+
+#X axis text and display style of categories
+ax.set_xlabel("Frequency", fontsize=12)
+
+#Y axis text
+ax.set_ylabel("Word", fontsize=12)
+
+#Title
+ax.set_title("Top 40 keywords with frequency", fontsize=20)
+
+#Annotations
+for i in ax.patches:
+    # get_width pulls left or right; get_y pushes up or down
+    ax.text(i.get_width()+.1, i.get_y()+.31, str(round((i.get_width()), 2)), fontsize=10, color='dimgrey')
+```
+
+
+
+
+### Who is listed as the publisher?
+
+
+```{python}
+
+publisher = []
+for data in d['dataset']:
+    publisher.append(data['publisher']['name'])
+
+publisher_count =  pd.Series(publisher).value_counts()
+publisher_counts = publisher_count[:7]
+
+publisher_counts
+
+```
+
+### In which formats (shapefile, API, application, etc.) is the data available?
+
+```{python}
+data_type = []
+for data in d['dataset']:
+    source = 'Other'
+    try:
+        for data_format in data['distribution']:
+            data_type.append(data_format['mediaType'])
+    except:
+        data_type.append('Unknown')
+```
+
+Number of distinct dataset distribution format types
+```{python}
+data_type_count =  pd.Series(data_type).value_counts()
+len(data_type_count)
+```
+
+
+```{python}
+#Generates bar graph
+ax = data_type_count.sort_values(ascending=True).plot(kind='barh', color='orange', figsize=(10, 10), fontsize=12)
+
+#X axis text and display style of categories
+ax.set_xlabel("Frequency", fontsize=12)
+
+#Y axis text
+ax.set_ylabel("Data format", fontsize=12)
+
+#Title
+ax.set_title("Formats in which data is made available", fontsize=20)
+
+#Annotations
+for i in ax.patches:
+    # get_width pulls left or right; get_y pushes up or down
+    ax.text(i.get_width()+.1, i.get_y()+.31, str(round((i.get_width()), 2)), fontsize=10, color='dimgrey')
+```
+
+
+### Are there temporal patterns for when the data is added?
+
+```{python}
+import datetime
+
+d['dataset'][0]['issued']
+```
+
+
+```{python}
+#| warning: False
+created = pd.DataFrame(columns=['Title', 'Identifier', 'year', 'month'])
+for data in d['dataset']:
+    date_time_obj = datetime.datetime.strptime(data['issued'][:10], '%Y-%m-%d')
+    temp = {}
+    temp['Title'] = data['title']
+    temp['Identifier'] = data['identifier']
+    temp['year'] = int(date_time_obj.year)
+    temp['month'] = int(date_time_obj.month)
+    created = created.append(temp, ignore_index=True)
+#    see: https://pandas.pydata.org/docs/reference/api/pandas.concat.html#pandas.concat 
+```
+
+```{python}
+created.head()
+```
+```{python}
+created.to_csv("AGO_created_metadata_date.csv")
+```
+
+
+```{python}
+years_created = created['year'].unique()
+years_created
+```
+
+
+```{python}
+import numpy as np
+years_created = np.sort(years_created)
+```
+
+```{python}
+
+all_issued = []
+for data in d['dataset']:
+    all_issued.append(data['issued'][:7])
+
+```
+
+```{python}
+from collections import Counter
+#Extract the count of occurrence of each date
+counts = Counter(all_issued)
+#Fetch ranges for the chart
+min_year = min(years_created)
+max_year = max(years_created)
+all_issued_dates = {}
+
+all_issued_dates[min(all_issued)] = counts[min(all_issued)]
+#For the first year
+for month in range(int(min(all_issued)[5:])+1, 13):
+    if month < 10:
+        date = str(min_year)+'-0'+str(month)
+    else:
+        date = str(min_year)+'-'+str(month)
+    all_issued_dates[date] = counts[date]
+#For all the years in between
+for year in range(min_year+1, max_year):
+    for month in range(1,13):
+        if month < 10:
+            date = str(year)+'-0'+str(month)
+        else:
+            date = str(year)+'-'+str(month)
+        all_issued_dates[date] = counts[date]
+#For the last year
+for month in range(1,int(max(all_issued)[5:])+1):
+    if month < 10:
+        date = str(max_year)+'-0'+str(month)
+    else:
+        date = str(max_year)+'-'+str(month)
+    all_issued_dates[date] = counts[date]
+```
+
+
+#### Bar chart by month of each year
+
+```{python}
+plt.figure(figsize=(40,10))
+bars = plt.bar(all_issued_dates.keys(), all_issued_dates.values(), color='darkgoldenrod')
+_=plt.xticks(rotation=45)
+
+#X axis text
+plt.xlabel("Month of each year", fontsize=16)
+
+#Y axis text
+plt.ylabel("Frequency", fontsize=16)
+
+#Title
+plt.title("Number of data assets created for each month of every year", fontsize=20)
+
+#Annotations
+for i in bars:
+    plt.text(i.get_x() + i.get_width()/2-0.3, i.get_y()+i.get_height()+2, str(round((i.get_height()), 2)), fontsize=15, color='dimgrey')
+
+plt.show()
+#plt.savefig("Barchart_monthly_issued_data.png")
+```
+
+#### "Small multiple" histogram charts highlighting how many datasets were added in each month of each year
+
+```{python}
+sns.set_style("whitegrid", {'axes.grid' : False})
+#define grid of subplots based on number of unique values obtained above
+num_rows = 2
+num_cols = 5
+fig, ax = plt.subplots(num_rows, num_cols)
+
+row_count = 0
+col_count = 0
+
+while row_count <= num_rows-1:
+    for year in years_created:
+        try:
+            data_subset = created[created['year']==year]
+            data_subset['month'].plot(kind='hist', bins=12, ax=ax[row_count,col_count], figsize=(25,25), facecolor='green', alpha=0.5)
+            ax[row_count,col_count].set_title(year)
+            ax[row_count,col_count].set_xlim([1, 13])
+            if col_count==num_cols-1:
+                row_count = row_count + 1
+                col_count = 0
+            else:
+                col_count = col_count + 1
+        except:
+            pass
+```
+
+#### Stacked bar chart for each month of the year
+
+```{python}
+jan, feb, mar, apr, may, june, july, aug, sep, octo, nov, dec = ([] for i in range(12))
+for year in years_created:
+    data_subset = created[created['year']==year]
+    jan.append(data_subset[data_subset.month == 1].count()[0])
+    feb.append(data_subset[data_subset.month == 2].count()[0])
+    mar.append(data_subset[data_subset.month == 3].count()[0])
+    apr.append(data_subset[data_subset.month == 4].count()[0])
+    may.append(data_subset[data_subset.month == 5].count()[0])
+    june.append(data_subset[data_subset.month == 6].count()[0])
+    july.append(data_subset[data_subset.month == 7].count()[0])
+    aug.append(data_subset[data_subset.month == 8].count()[0])
+    sep.append(data_subset[data_subset.month == 9].count()[0])
+    octo.append(data_subset[data_subset.month == 10].count()[0])
+    nov.append(data_subset[data_subset.month == 11].count()[0])
+    dec.append(data_subset[data_subset.month == 12].count()[0])
+```
+
+
+```{python}
+#add colors
+colors = ['rosybrown', 'goldenrod','cadetblue','chocolate','gold', 'coral', 'lightskyblue', 'orchid', 'slategrey', 'orange', 'tan', 'seagreen']# The position of the bars on the x-axis
+r1 = range(len(years_created))
+
+barWidth = 1
+#plot bars
+plt.figure(figsize=(10,7))
+plt.bar(r1, jan, color=colors[0], edgecolor='white', width=barWidth, label="January")
+plt.bar(r1, feb, bottom=np.array(jan), color=colors[1], edgecolor='white', width=barWidth, label='February')
+plt.bar(r1, mar, bottom=np.array(jan)+np.array(feb), color=colors[2], edgecolor='white', width=barWidth, label='March')
+plt.bar(r1, apr, bottom=np.array(jan)+np.array(feb)+np.array(mar), color=colors[3], edgecolor='white', width=barWidth, label='April')
+plt.bar(r1, may, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr), color=colors[4], edgecolor='white', width=barWidth, label='May')
+plt.bar(r1, june, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may), color=colors[5], edgecolor='white', width=barWidth, label='June')
+plt.bar(r1, july, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june), color=colors[6], edgecolor='white', width=barWidth, label='July')
+plt.bar(r1, aug, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july), color=colors[7], edgecolor='white', width=barWidth, label='August')
+plt.bar(r1, sep, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug), color=colors[8], edgecolor='white', width=barWidth, label='September')
+plt.bar(r1, octo, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug)+np.array(sep), color=colors[9], edgecolor='white', width=barWidth, label='October')
+plt.bar(r1, nov, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug)+np.array(sep)+np.array(octo), color=colors[10], edgecolor='white', width=barWidth, label='November')
+bars = plt.bar(r1, dec, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug)+np.array(sep)+np.array(octo)+np.array(nov), color=colors[11], edgecolor='white', width=barWidth, label='December')
+plt.legend()# Custom X axis
+plt.xticks(r1, years_created, fontweight='bold')
+plt.xlabel("Years")
+plt.ylabel("Frequency")
+plt.title('Data assets created by month of each year')
+#Annotations
+counts = created['year'].value_counts().sort_values()
+ix = min(years_created)
+for i in bars:
+    plt.text(i.get_x() + i.get_width()/2-0.11, i.get_y()+i.get_height()+5, str(counts[ix]), fontsize=10, color='dimgrey')
+    ix = ix + 1
+plt.show()
+```
+
+#### Temporal patterns per quarter
+
+```{python}
+q1, q2, q3, q4 = ([] for i in range(4))
+for year in years_created:
+    data_subset = created[created['year']==year]
+    q1.append(data_subset[data_subset.month.isin([1, 2, 3])].count()[0])
+    q2.append(data_subset[data_subset.month.isin([4, 5, 6])].count()[0])
+    q3.append(data_subset[data_subset.month.isin([7, 8, 9])].count()[0])
+    q4.append(data_subset[data_subset.month.isin([10, 11, 12])].count()[0])
+```
+
+```{python}
+#add colors
+colors = ['deepskyblue', 'pink', 'forestgreen', 'gold']# The position of the bars on the x-axis
+r1 = range(len(years_created))
+
+barWidth = 1
+#plot bars
+plt.figure(figsize=(10,7))
+plt.bar(r1, q1, color=colors[0], edgecolor='white', width=barWidth, label="Q1 (Jan-Mar)")
+plt.bar(r1, q2, bottom=np.array(q1), color=colors[1], edgecolor='white', width=barWidth, label='Q2 (Apr-Jun)')
+plt.bar(r1, q3, bottom=np.array(q1)+np.array(q2), color=colors[2], edgecolor='white', width=barWidth, label='Q3 (Jul-Sep)')
+bars = plt.bar(r1, q4, bottom=np.array(q1)+np.array(q2)+np.array(q3), color=colors[3], edgecolor='white', width=barWidth, label='Q4 (Oct-Dec)')
+plt.legend()# Custom X axis
+plt.xticks(r1, years_created, fontweight='bold')
+plt.xlabel("Years")
+plt.ylabel("Frequency")
+plt.title('Data assets created by each yearly quarter')
+#Annotations
+counts = created['year'].value_counts().sort_values()
+ix = min(years_created)
+for i in bars:
+    plt.text(i.get_x() + i.get_width()/2-0.11, i.get_y()+i.get_height()+5, str(counts[ix]), fontsize=10, color='dimgrey')
+    ix = ix + 1
+plt.show()
+
+
+```
+
+
+### Are there temporal patterns for when the data is modified?
+
+
+```{python}
+d['dataset'][0]['modified']
+```
+
+
+```{python}
+#| warning: FALSE
+modified = pd.DataFrame(columns=['Title', 'Identifier', 'year', 'month'])
+for data in d['dataset']:
+    date_time_obj = datetime.datetime.strptime(data['modified'][:10], '%Y-%m-%d')
+    temp = {}
+    temp['Title'] = data['title']
+    temp['Identifier'] = data['identifier']
+    temp['year'] = int(date_time_obj.year)
+    temp['month'] = int(date_time_obj.month)
+    modified = modified.append(temp, ignore_index=True)
+```
+
+```{python}
+modified.head()
+```
+```{python}
+years_modified = modified['year'].unique()
+years_modified = np.sort(years_modified)
+years_modified
+```
+#### Bar chart by month of each year
+```{python}
+all_modified = []
+for data in d['dataset']:
+    all_modified.append(data['modified'][:7])
+```
+
+
+
+```{python}
+from collections import Counter
+#Extract the count of occurrence of each date
+counts = Counter(all_modified)
+#Fetch ranges for the chart
+min_year = min(years_modified)
+max_year = max(years_modified)
+all_modified_dates = {}
+
+all_modified_dates[min(all_modified)] = counts[min(all_modified)]
+#For the first year
+for month in range(int(min(all_modified)[5:])+1, 13):
+    if month < 10:
+        date = str(min_year)+'-0'+str(month)
+    else:
+        date = str(min_year)+'-'+str(month)
+    all_modified_dates[date] = counts[date]
+#For all the years in between
+for year in range(min_year+1, max_year):
+    for month in range(1,13):
+        if month < 10:
+            date = str(year)+'-0'+str(month)
+        else:
+            date = str(year)+'-'+str(month)
+        all_modified_dates[date] = counts[date]
+#For the last year
+for month in range(1,int(max(all_modified)[5:])+1):
+    if month < 10:
+        date = str(max_year)+'-0'+str(month)
+    else:
+        date = str(max_year)+'-'+str(month)
+    all_modified_dates[date] = counts[date]
+```
+
+
+```{python}
+plt.figure(figsize=(30,10))
+bars = plt.bar(all_modified_dates.keys(), all_modified_dates.values(), color='teal')
+_=plt.xticks(rotation=45)
+
+#X axis text
+plt.xlabel("Month of each year", fontsize=16)
+
+#Y axis text
+plt.ylabel("Frequency", fontsize=16)
+
+#Title
+plt.title("Number of data assets modified for each month of every year", fontsize=20)
+
+#Annotations
+for i in bars:
+    plt.text(i.get_x() + i.get_width()/2-0.5, i.get_y()+i.get_height()+2, str(round((i.get_height()), 2)), fontsize=15, color='dimgrey')
+
+plt.show()
+#plt.savefig("Barchart_monthly_issued_data.png")
+```
+
+#### "Small multiple" histogram charts highlighting how many datasets were modified in each month of each year
+
+```{python}
+#define grid of subplots based on number of unique values obtained above
+num_rows = 2
+num_cols = 4
+fig, ax = plt.subplots(num_rows, num_cols)
+count = len(years_modified)
+no_charts = 1
+row_count = 0
+col_count = 0
+
+while row_count <= num_rows-1:
+    print(no_charts)
+    if no_charts > count:
+        break
+    for year in years_modified:
+        try:
+            data_subset = modified[modified['year']==year]
+            data_subset['month'].plot(kind='hist', bins=12, ax=ax[row_count,col_count], figsize=(25,25), facecolor='purple', alpha=0.5)
+            ax[row_count,col_count].set_xlim([0, 12])
+            ax[row_count,col_count].set_title(year)
+            if col_count==num_cols-1:
+                row_count = row_count + 1
+                col_count = 0
+            else:
+                col_count = col_count + 1
+            no_charts = no_charts + 1
+        except:
+
+            pass
+
+
+```
+
+#### Stacked bar chart for each month of the year
+
+```{python}
+jan, feb, mar, apr, may, june, july, aug, sep, octo, nov, dec = ([] for i in range(12))
+for year in years_modified:
+    data_subset = modified[modified['year']==year]
+    jan.append(data_subset[data_subset.month == 1].count()[0])
+    feb.append(data_subset[data_subset.month == 2].count()[0])
+    mar.append(data_subset[data_subset.month == 3].count()[0])
+    apr.append(data_subset[data_subset.month == 4].count()[0])
+    may.append(data_subset[data_subset.month == 5].count()[0])
+    june.append(data_subset[data_subset.month == 6].count()[0])
+    july.append(data_subset[data_subset.month == 7].count()[0])
+    aug.append(data_subset[data_subset.month == 8].count()[0])
+    sep.append(data_subset[data_subset.month == 9].count()[0])
+    octo.append(data_subset[data_subset.month == 10].count()[0])
+    nov.append(data_subset[data_subset.month == 11].count()[0])
+    dec.append(data_subset[data_subset.month == 12].count()[0])
+```
+
+
+```{python}
+#add colors
+colors = ['rosybrown', 'goldenrod','cadetblue','chocolate','gold', 'coral', 'lightskyblue', 'orchid', 'slategrey', 'orange', 'tan', 'seagreen']# The position of the bars on the x-axis
+r2 = range(len(years_modified))
+
+barWidth = 1
+#plot bars
+plt.figure(figsize=(10,7))
+plt.bar(r2, jan, color=colors[0], edgecolor='white', width=barWidth, label="January")
+plt.bar(r2, feb, bottom=np.array(jan), color=colors[1], edgecolor='white', width=barWidth, label='February')
+plt.bar(r2, mar, bottom=np.array(jan)+np.array(feb), color=colors[2], edgecolor='white', width=barWidth, label='March')
+plt.bar(r2, apr, bottom=np.array(jan)+np.array(feb)+np.array(mar), color=colors[3], edgecolor='white', width=barWidth, label='April')
+plt.bar(r2, may, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr), color=colors[4], edgecolor='white', width=barWidth, label='May')
+plt.bar(r2, june, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may), color=colors[5], edgecolor='white', width=barWidth, label='June')
+plt.bar(r2, july, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june), color=colors[6], edgecolor='white', width=barWidth, label='July')
+plt.bar(r2, aug, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july), color=colors[7], edgecolor='white', width=barWidth, label='August')
+plt.bar(r2, sep, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug), color=colors[8], edgecolor='white', width=barWidth, label='September')
+plt.bar(r2, octo, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug)+np.array(sep), color=colors[9], edgecolor='white', width=barWidth, label='October')
+plt.bar(r2, nov, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug)+np.array(sep)+np.array(octo), color=colors[10], edgecolor='white', width=barWidth, label='November')
+bars = plt.bar(r2, dec, bottom=np.array(jan)+np.array(feb)+np.array(mar)+np.array(apr)+np.array(may)+np.array(june)+np.array(july)+np.array(aug)+np.array(sep)+np.array(octo)+np.array(nov), color=colors[11], edgecolor='white', width=barWidth, label='December')
+plt.legend()
+#Custom X axis
+plt.xticks(r2, years_modified, fontweight='bold')
+plt.xlabel("Years")
+plt.ylabel("Frequency")
+plt.title('Data assets modified by month of each year')
+#Annotations
+counts = modified['year'].value_counts().sort_values()
+ix = min(years_modified)
+for i in bars:
+    try:
+        plt.text(i.get_x() + i.get_width()/2-0.11, i.get_y()+i.get_height()+5, str(counts[ix]), fontsize=10, color='dimgrey')
+        ix = ix + 1
+    #Adjustment for absence of activity in the year 2014
+    except KeyError:
+        plt.text(i.get_x() + i.get_width()/2-0.11, i.get_y()+i.get_height()+5, str(counts[ix+1]), fontsize=10, color='dimgrey')
+        ix = ix + 2
+plt.show()
+```
+
+#### Temporal patterns per quarter
+
+```{python}
+q1, q2, q3, q4 = ([] for i in range(4))
+for year in years_modified:
+    data_subset = modified[modified['year']==year]
+    q1.append(data_subset[data_subset.month.isin([1, 2, 3])].count()[0])
+    q2.append(data_subset[data_subset.month.isin([4, 5, 6])].count()[0])
+    q3.append(data_subset[data_subset.month.isin([7, 8, 9])].count()[0])
+    q4.append(data_subset[data_subset.month.isin([10, 11, 12])].count()[0])
+```
+
+```{python}
+#add colors
+colors = ['deepskyblue', 'pink', 'forestgreen', 'gold']# The position of the bars on the x-axis
+r2 = range(len(years_modified))
+
+barWidth = 1
+#plot bars
+plt.figure(figsize=(10,7))
+plt.bar(r2, q1, color=colors[0], edgecolor='white', width=barWidth, label="Q1 (Jan-Mar)")
+plt.bar(r2, q2, bottom=np.array(q1), color=colors[1], edgecolor='white', width=barWidth, label='Q2 (Apr-Jun)')
+plt.bar(r2, q3, bottom=np.array(q1)+np.array(q2), color=colors[2], edgecolor='white', width=barWidth, label='Q3 (Jul-Sep)')
+plt.bar(r2, q4, bottom=np.array(q1)+np.array(q2)+np.array(q3), color=colors[3], edgecolor='white', width=barWidth, label='Q4 (Oct-Dec)')
+plt.legend()
+#Custom X axis
+plt.xticks(r2, years_modified, fontweight='bold')
+plt.xlabel("Years")
+plt.ylabel("Frequency")
+plt.title('Data assets modified by each yearly quarter')
+#Annotations
+counts = modified['year'].value_counts().sort_values()
+ix = min(years_modified)
+for i in bars:
+    try:
+        plt.text(i.get_x() + i.get_width()/2-0.11, i.get_y()+i.get_height()+5, str(counts[ix]), fontsize=10, color='dimgrey')
+        ix = ix + 1
+    #Adjustment for absence of activity in the year 2014
+    except KeyError:
+        plt.text(i.get_x() + i.get_width()/2-0.11, i.get_y()+i.get_height()+5, str(counts[ix+1]), fontsize=10, color='dimgrey')
+        ix = ix + 2
+plt.show()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+  
+## Running Code
+
+You can embed executable code like this:
+
+```{python}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{python}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+## Plots
+
+See @fig-polar for an example of rendering plots as figures:
+
+```{python}
+#| label: fig-polar
+#| fig-cap: "A line plot on a polar axis"
+#| code-fold: true
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+r = np.arange(0, 2, 0.01)
+theta = 2 * np.pi * r
+fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+ax.plot(theta, r)
+ax.set_rticks([0.5, 1, 1.5, 2])
+ax.grid(True)
+plt.show()
+```
+
+
+ 
